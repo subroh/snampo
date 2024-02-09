@@ -44,6 +44,7 @@ class MissionPage extends HookWidget {
               style: const TextStyle(fontSize: 18),
             ),
           ),
+          SnapView(),
         ]),
       );
     } else if (snapshot.hasError) {
@@ -69,6 +70,67 @@ class MissionPage extends HookWidget {
         ),
       );
     }
+  }
+}
+
+class SnapView extends StatelessWidget {
+  const SnapView({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return DraggableScrollableSheet(
+      // 初期の表示割合
+      initialChildSize: 0.2,
+      // 最小の表示割合
+      minChildSize: 0.2,
+      // 最大の表示割合
+      maxChildSize: 0.5,
+      // ドラッグを離した時に一番近いsnapSizeになるか
+      snap: true,
+      // snapで止める時の割合
+      snapSizes: const [0.2, 0.5],
+      builder: (BuildContext context, ScrollController scrollController) {
+        //　表示したいWidgetを返す
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color.fromARGB(255, 218, 243, 255),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+            ),
+          ),
+          child: ListView.builder(
+              controller: scrollController,
+              itemCount: 1,
+              itemBuilder: (BuildContext context, int index) {
+                return SnapViewState();
+              }),
+        );
+      },
+    );
+  }
+}
+
+class SnapViewState extends StatelessWidget {
+  const SnapViewState({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text("menu top"),
+        SizedBox(
+          height: 1000,
+        ),
+        Text("menu bottom"),
+      ],
+    );
   }
 }
 
