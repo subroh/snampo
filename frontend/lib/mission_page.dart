@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-class MissionPage extends StatelessWidget {
-  final double sliderValue;
+const String SERVER_URL = 'https://';
 
-  const MissionPage(this.sliderValue, {super.key});
+class MissionPage extends HookWidget {
+  final double distance;
+  const MissionPage({required this.distance, super.key});
+
+  Future<Position> getCurrentLocation() async {
+    // 現在の位置を返す
+    Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
+    return position;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -14,41 +23,64 @@ class MissionPage extends StatelessWidget {
       color: theme.colorScheme.onPrimary,
     );
 
-    // return MapView();
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'On MISSION',
-          style: textstyle,
+    final future = useMemoized(getCurrentLocation);
+    final snapshot = useFuture(future, initialData: null);
+
+    if (snapshot.hasData && snapshot.data != null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(
+            'On MISSION',
+            style: textstyle,
+          ),
+          centerTitle: true,
+          backgroundColor: theme.colorScheme.primary,
         ),
-        centerTitle: true,
-        backgroundColor: theme.colorScheme.primary,
-      ),
-      body: Stack(
-        children:[
-          const MapView(),
+        body: Stack(children: [
+          MapView(currentLocation: snapshot.data!),
           Center(
             child: Text(
-              'Slider Value from Setup Page: $sliderValue',
+              'Slider Value from Setup Page: $distance',
               style: const TextStyle(fontSize: 18),
             ),
           ),
-        ]
-      )
-    );
+        ]),
+      );
+    } else if (snapshot.hasError) {
+      return const Center(
+        child: Text('error occurred'),
+      );
+    } else {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(
+            'On MISSION',
+            style: textstyle,
+          ),
+          centerTitle: true,
+          backgroundColor: theme.colorScheme.primary,
+        ),
+        body: const Center(
+          child: Column(
+            children: [
+              Text("NOW LOADING"),
+            ],
+          ),
+        ),
+      );
+    }
   }
 }
 
 class MapView extends StatefulWidget {
-  const MapView({super.key});
+  final Position currentLocation;
+  const MapView({required this.currentLocation, super.key});
 
   @override
   _MapViewState createState() => _MapViewState();
 }
 
 class _MapViewState extends State<MapView> {
-  // マップビューの初期位置
-  final CameraPosition _initialLocation = const CameraPosition(target: LatLng(0.0, 0.0)); // 追加
   // マップの表示制御用
   late GoogleMapController mapController;
 
@@ -65,13 +97,15 @@ class _MapViewState extends State<MapView> {
         body: Stack(
           children: <Widget>[
             GoogleMap(
-              // initialCameraPosition: CameraPosition( //マップの初期位置を指定
-              //   zoom: 17,                         //ズーム
-              //   target: LatLng(35.0, 135.0),     //経度,緯度
-              //   tilt: 45.0,                     //上下の角度
-              //   bearing: 90.0
-              // ),                //指定した角度だけ回転する
-              initialCameraPosition: _initialLocation,
+              initialCameraPosition: CameraPosition( //マップの初期位置を指定
+                zoom: 17,                         //ズーム
+                target: LatLng(
+                  widget.currentLocation.latitude,
+                  widget.currentLocation.longitude
+                ),     //緯度, 経度
+                tilt: 45.0,                     //上下の角度
+                bearing: 90.0
+              ),
               myLocationEnabled: true,
               myLocationButtonEnabled: false,
               mapType: MapType.normal,
