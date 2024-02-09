@@ -1,13 +1,11 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:snampo/setup_page.dart';
-
+import 'package:snampo/history_page.dart';
 
 void main() async {
-    // runAppを呼び出す前にバインディングを初期化する.
+  // runAppを呼び出す前にバインディングを初期化する.
   WidgetsFlutterBinding.ensureInitialized();
   // initStateの中には、書けないので、main関数の中で実行する.
   LocationPermission permission = await Geolocator.checkPermission();
@@ -26,10 +24,10 @@ class MyApp extends StatelessWidget {
       title: 'TEST',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 34, 255, 38)),
-        textTheme: GoogleFonts.sawarabiGothicTextTheme(
-          Theme.of(context).textTheme
-        ),
+        colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color.fromARGB(255, 34, 255, 38)),
+        textTheme:
+            GoogleFonts.sawarabiGothicTextTheme(Theme.of(context).textTheme),
       ),
       home: const TopPage(),
     );
@@ -51,8 +49,13 @@ class TopPage extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('スナんぽ(仮)', style: style,),
-            const SizedBox(height: 20,),
+            Text(
+              'スナんぽ(仮)',
+              style: style,
+            ),
+            const SizedBox(
+              height: 20,
+            ),
             const StartButton(),
             const SizedBox(height: 10), // 2つの間を空ける
             const HistoryButton(),
@@ -71,7 +74,7 @@ class StartButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-     final style = theme.textTheme.displayMedium!.copyWith(
+    final style = theme.textTheme.displayMedium!.copyWith(
       color: theme.colorScheme.onPrimary,
     );
 
@@ -83,7 +86,7 @@ class StartButton extends StatelessWidget {
       onPressed: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => SetupPage()),
+          MaterialPageRoute(builder: (context) => const SetupPage()),
         );
       },
       child: Padding(
@@ -102,7 +105,7 @@ class HistoryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-     final style = theme.textTheme.displayMedium!.copyWith(
+    final style = theme.textTheme.displayMedium!.copyWith(
       color: theme.colorScheme.onPrimary,
     );
 
@@ -110,12 +113,14 @@ class HistoryButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: theme.colorScheme.primary, // ボタンの背景色
         foregroundColor: theme.colorScheme.onPrimary,
-        shape: RoundedRectangleBorder( // 形を変えるか否か
+        shape: RoundedRectangleBorder(
+          // 形を変えるか否か
           borderRadius: BorderRadius.circular(10), // 角の丸み
         ),
       ),
       onPressed: () {
-        print('button pressed!');
+        Navigator.push(context,
+            MaterialPageRoute(builder: (context) => const HistoryPage()));
       },
       child: Padding(
         padding: const EdgeInsets.all(20.0),
