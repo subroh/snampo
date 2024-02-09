@@ -97,14 +97,14 @@ class _MapViewState extends State<MapView> {
         body: Stack(
           children: <Widget>[
             GoogleMap(
-              initialCameraPosition: CameraPosition( //マップの初期位置を指定
-                zoom: 17,                         //ズーム
+              initialCameraPosition: CameraPosition(
+                //マップの初期位置を指定
+                zoom: 17, //ズーム
                 target: LatLng(
+                  //緯度, 経度
                   widget.currentLocation.latitude,
-                  widget.currentLocation.longitude
-                ),     //緯度, 経度
-                tilt: 45.0,                     //上下の角度
-                bearing: 90.0
+                  widget.currentLocation.longitude,
+                ),
               ),
               myLocationEnabled: true,
               myLocationButtonEnabled: false,
