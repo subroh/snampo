@@ -28,7 +28,7 @@ class SliderWidget extends StatefulWidget {
   const SliderWidget({super.key});
 
   @override
-  _SliderWidgetState createState() => _SliderWidgetState();
+  State<SliderWidget> createState() => _SliderWidgetState();
 }
 
 class _SliderWidgetState extends State<SliderWidget> {
@@ -66,13 +66,18 @@ class _SliderWidgetState extends State<SliderWidget> {
   }
 }
 
-class SubmitButton extends StatelessWidget {
-  double value;
-  SubmitButton({
+class SubmitButton extends StatefulWidget {
+  final double value;
+  const SubmitButton({
     required this.value,
     super.key,
   });
 
+  @override
+  State<SubmitButton> createState() => _SubmitButtonState();
+}
+
+class _SubmitButtonState extends State<SubmitButton> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -93,7 +98,7 @@ class SubmitButton extends StatelessWidget {
           context, 
           MaterialPageRoute(
             builder: (context) =>
-            MissionPage(value),
+            MissionPage(widget.value),
           ),
         );
       },
