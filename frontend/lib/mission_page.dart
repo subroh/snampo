@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:snampo/snap_menu.dart';
 
 const String SERVER_URL = 'https://';
 
@@ -44,6 +45,7 @@ class MissionPage extends HookWidget {
               style: const TextStyle(fontSize: 18),
             ),
           ),
+          SnapView(),
         ]),
       );
     } else if (snapshot.hasError) {
