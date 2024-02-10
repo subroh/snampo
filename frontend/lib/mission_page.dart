@@ -17,43 +17,72 @@ class MissionPage extends HookWidget {
   final double radius;
   const MissionPage({required this.radius, super.key});
 
-  Future<Position> getCurrentLocation() async {
-    // 現在の位置を返す
-    Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
-    return position;
-  }
+  // Future<Position> getCurrentLocation() async {
+  //   // 現在の位置を返す
+  //   Position position = await Geolocator.getCurrentPosition(
+  //       desiredAccuracy: LocationAccuracy.high);
+  //   print("got current location");
+  //   return position;
+  // }
 
-  Future<String> getMissionInfo(Position position, double radius) async {
-    final dio = Dio();
-    String radiusString = (radius * 10000).toInt().toString(); // km から m にし整数値の文字列に
+  // Future<String> getMissionInfo(Position position) async {
+  //   final dio = Dio();
+  //   String radiusString =
+  //       (radius * 10000).toInt().toString(); // km から m にし整数値の文字列に
+  //   print("made query");
+  //   final response = await dio.get(
+  //     'http://localhost:80/route',
+  //     queryParameters: {
+  //       'currentLat': position.latitude,
+  //       'currentLng': position.longitude,
+  //       'radius': radiusString,
+  //     },
+  //   );
+  //   // String response = '{"departure":{"latitude":35.658581,"longitude":139.745433},"destination":{"latitude":35.65946095725984,"longitude":139.73649146904035},"midpoints":[{"latitude":35.657320000000006,"longitude":139.74216}],"overview_polyline":"orsxEaa}sYAAP_@f@eAj@f@XXn@b@RFPAd@M|@UJBF|@PtB@Jm@ZPn@FTo@VNl@@DKF\\nALf@@REv@DBANEAC\\EbACJICGVc@rB]zBOnA[|BMv@INGr@?Z@z@HTHHNNp@tAJ`@BV@x@KxAGn@E^QDBXJC?ZE@DRu@TBBC@UHQ@SA}@GcC[y@O"}';
+  //   print("got response");
+  //   return (response.data);
 
-    final response = await dio.get(
-      'http://localhost:80/route',
-      queryParameters: {
-        'currentLat': position.latitude,
-        'currentLng': position.longitude,
-        'radius': radiusString,
-      },
-    );
+  //   // } catch (e) {
+  //   //   return ('Error: $e');
+  //   // }
+  // }
 
-    return (response.data);
-    // } catch (e) {
-    //   return ('Error: $e');
-    // }
-  }
+  // Future<LocationModel> loadJsonData(missionInfo) async {
+  //   String jsonString = missionInfo;
+  //   Map<String, dynamic> jsonData = json.decode(jsonString);
+  //   print("loaded json");
+  //   return LocationModel.fromJson(jsonData);
+  // }
 
-    Future<LocationModel> loadJsonData(missionInfo) async {
-    String jsonString = missionInfo;
-    Map<String, dynamic> jsonData = json.decode(jsonString);
-    return LocationModel.fromJson(jsonData);
-  }
+  // Future<LocationModel> makeMission() async {
+  //   Position currentLocation = await getCurrentLocation();
+  //   String missionInfo = await getMissionInfo(currentLocation);
+  //   LocationModel locationModel = await loadJsonData(missionInfo);
+  //   return locationModel;
+  // }
 
   Future<LocationModel> makeMission() async {
-    Position currentLocation = await getCurrentLocation();
-    String missionInfo = await getMissionInfo(currentLocation, radius);
-    LocationModel locationModel = await loadJsonData(missionInfo);
-    return locationModel;
+    Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
+    
+    final dio = Dio();
+    String radiusString =
+        (radius * 10000).toInt().toString(); // km から m にし整数値の文字列に
+    print("made query");
+    // final response = await dio.get(
+    //   'http://localhost:80/route',
+    //   queryParameters: {
+    //     'currentLat': position.latitude,
+    //     'currentLng': position.longitude,
+    //     'radius': radiusString,
+    //   },
+    // );
+    const response = '{"departure":{"latitude":35.658581,"longitude":139.745433},"destination":{"latitude":35.65946095725984,"longitude":139.73649146904035},"midpoints":[{"latitude":35.657320000000006,"longitude":139.74216}],"overview_polyline":"orsxEaa}sYAAP_@f@eAj@f@XXn@b@RFPAd@M|@UJBF|@PtB@Jm@ZPn@FTo@VNl@@DKF\\nALf@@REv@DBANEAC\\EbACJICGVc@rB]zBOnA[|BMv@INGr@?Z@z@HTHHNNp@tAJ`@BV@x@KxAGn@E^QDBXJC?ZE@DRu@TBBC@UHQ@SA}@GcC[y@O"}';
+    String jsonString = response;
+    Map<String, dynamic> jsonData = await jsonDecode(jsonString);
+    print("loaded json");
+    LocationModel missionInfo = LocationModel.fromJson(jsonData);
+    return missionInfo;
   }
 
   @override
@@ -62,7 +91,7 @@ class MissionPage extends HookWidget {
     final textstyle = theme.textTheme.displaySmall!.copyWith(
       color: theme.colorScheme.onPrimary,
     );
-    
+
     // final future = useMemoized(getCurrentLocation);
     final future = useMemoized(makeMission);
     final snapshot = useFuture(future, initialData: null);
