@@ -94,7 +94,7 @@ class SnapViewState extends StatelessWidget {
             Text("- Spot1: "),
             Container(
               child: SetImage(
-                picture_name: "images/test1.jpeg",
+                pictureName: "images/test1.jpeg",
               ),
               width: 150,
               height: 150,
@@ -107,7 +107,7 @@ class SnapViewState extends StatelessWidget {
             Text("- Spot2: "),
             Container(
               child: SetImage(
-                picture_name: "images/test2.jpeg",
+                pictureName: "images/test2.jpeg",
               ),
               width: 150,
               height: 150,
@@ -143,9 +143,9 @@ class SnapViewState extends StatelessWidget {
 }
 
 class SetImage extends StatelessWidget {
-  final String picture_name;
+  final String pictureName;
   const SetImage({
-    required this.picture_name,
+    required this.pictureName,
     super.key,
   });
 
@@ -153,7 +153,7 @@ class SetImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return FittedBox(
       fit: BoxFit.contain,
-      child: Image.asset(picture_name),
+      child: Image.asset(pictureName),
     );
   }
 }
