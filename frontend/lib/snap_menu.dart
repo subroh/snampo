@@ -1,6 +1,7 @@
 // mission_pageで表示するsnapのメニュー
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:snampo/result_page.dart';
 
 class SnapView extends StatelessWidget {
   const SnapView({
@@ -75,21 +76,26 @@ class SnapViewState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textstyle = theme.textTheme.displaySmall!.copyWith(
+    final titelTextstyle = theme.textTheme.displaySmall!.copyWith(
       color: theme.colorScheme.secondary,
+    );
+    final buttonTextstyle = theme.textTheme.bodyLarge!.copyWith(
+      color: theme.colorScheme.onPrimary,
     );
     return Column(
       children: [
         Text(
           "MISSION",
-          style: textstyle,
+          style: titelTextstyle,
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text("- Spot1: "),
             Container(
-              child: SetImage(picture_name: "images/test1.jpeg",),
+              child: SetImage(
+                picture_name: "images/test1.jpeg",
+              ),
               width: 150,
               height: 150,
             ),
@@ -100,16 +106,37 @@ class SnapViewState extends StatelessWidget {
           children: [
             Text("- Spot2: "),
             Container(
-              child: SetImage(picture_name: "images/test2.jpeg",),
+              child: SetImage(
+                picture_name: "images/test2.jpeg",
+              ),
               width: 150,
               height: 150,
             ),
           ],
         ),
         SizedBox(
-          height: 1000,
+          height: 20,
         ),
-        Text("menu bottom"),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary, // ボタンの背景色
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(
+              // 形を変えるか否か
+              borderRadius: BorderRadius.circular(10), // 角の丸み
+            ),
+          ),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => ResultPage()),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Text('到着', style: buttonTextstyle),
+          ),
+        ),
       ],
     );
   }
@@ -118,7 +145,8 @@ class SnapViewState extends StatelessWidget {
 class SetImage extends StatelessWidget {
   final String picture_name;
   const SetImage({
-    required this.picture_name ,super.key,
+    required this.picture_name,
+    super.key,
   });
 
   @override
