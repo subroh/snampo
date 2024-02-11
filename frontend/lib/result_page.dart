@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:snampo/main.dart';
 
+
+// resultpageに遷移する時にバグるので要修正
 class ResultPage extends StatelessWidget {
   const ResultPage({super.key});
 
@@ -70,10 +72,11 @@ class HomeButton extends StatelessWidget {
         foregroundColor: theme.colorScheme.onPrimary,
       ),
       onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => MyApp()),
-        );
+        // Navigator.push(
+        //   context,
+        //   MaterialPageRoute(builder: (context) => MyApp()),
+        // );
+        Navigator.popUntil(context, (route) => route.isFirst);
       },
       child: Padding(
         padding: const EdgeInsets.all(20.0),
