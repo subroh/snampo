@@ -38,6 +38,8 @@ import 'package:snampo/location_model.dart';
 // final targetProvider = StateProvider<Position?>((ref) => (null));
 // final routeProvider = StateProvider<String?>((ref) => (null));
 // final landmarkInfoProvider = StateProvider<List<String>?>((ref) => (null));
-LocationPoint? target = null;
-String? route = null;
-List<MidPoint>? midpointInfoList = null;
+class GlobalVariables {
+  static late LocationPoint target;
+  static late String route;
+  static late List<MidPoint> midpointInfoList;
+}

@@ -50,7 +50,7 @@ class TopPage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              'スナんぽ(仮)',
+              'スナんぽ',
               style: style,
             ),
             const SizedBox(
