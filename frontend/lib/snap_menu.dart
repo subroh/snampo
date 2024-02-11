@@ -1,6 +1,9 @@
 // mission_pageで表示するsnapのメニュー
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:snampo/result_page.dart';
 
 class SnapView extends StatelessWidget {
@@ -92,26 +95,14 @@ class SnapViewState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text("- Spot1: "),
-            Container(
-              child: SetImage(
-                pictureName: "images/test1.jpeg",
-              ),
-              width: 150,
-              height: 150,
-            ),
+            TakeSnap(),
           ],
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text("- Spot2: "),
-            Container(
-              child: SetImage(
-                pictureName: "images/test2.jpeg",
-              ),
-              width: 150,
-              height: 150,
-            ),
+            TakeSnap(),
           ],
         ),
         SizedBox(
@@ -142,10 +133,53 @@ class SnapViewState extends StatelessWidget {
   }
 }
 
+class TakeSnap extends StatefulWidget {
+  const TakeSnap({
+    super.key,
+  });
+
+  @override
+  State<TakeSnap> createState() => _TakeSnapState();
+}
+
+class _TakeSnapState extends State<TakeSnap> {
+  File? _image;
+  final picker = ImagePicker();
+
+  Future getImage() async {
+    final pickedFile = await picker.pickImage(source: ImageSource.camera);
+
+    setState(() {
+      if (pickedFile != null) {
+        _image = File(pickedFile.path);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _image == null
+        ? FloatingActionButton(
+            onPressed: getImage,
+            child: Icon(Icons.add_a_photo),
+          )
+        : Container(
+            child: SetImage(
+              // picture_name: "images/test1.jpeg",
+              picture: _image!,
+            ),
+            width: 150,
+            height: 150,
+          );
+  }
+}
+
 class SetImage extends StatelessWidget {
-  final String pictureName;
+  // final String picture_name;
+  final File picture;
   const SetImage({
-    required this.pictureName,
+    // required this.picture_name,
+    required this.picture,
     super.key,
   });
 
@@ -153,7 +187,8 @@ class SetImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return FittedBox(
       fit: BoxFit.contain,
-      child: Image.asset(pictureName),
+      // child: Image.asset(picture_name),
+      child: Image.file(picture),
     );
   }
 }
