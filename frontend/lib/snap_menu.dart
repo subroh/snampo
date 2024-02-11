@@ -1,10 +1,14 @@
 // mission_pageで表示するsnapのメニュー
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:snampo/result_page.dart';
+import 'package:snampo/provider.dart';
+import 'dart:convert';
+import 'dart:developer';
 
 class SnapView extends StatelessWidget {
   const SnapView({
@@ -85,6 +89,8 @@ class SnapViewState extends StatelessWidget {
     final buttonTextstyle = theme.textTheme.bodyLarge!.copyWith(
       color: theme.colorScheme.onPrimary,
     );
+    print("snap_menu_image is");
+    print(GlobalVariables.midpointInfoList[0].imageUtf8);
     return Column(
       children: [
         Text(
@@ -95,6 +101,8 @@ class SnapViewState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text("- Spot1: "),
+            AnswerImage(
+                imageUtf8: GlobalVariables.midpointInfoList[0].imageUtf8!),
             TakeSnap(),
           ],
         ),
@@ -102,6 +110,9 @@ class SnapViewState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text("- Spot2: "),
+            SetTestImage(
+              picture: "images/test1.jpeg",
+            ),
             TakeSnap(),
           ],
         ),
@@ -129,6 +140,37 @@ class SnapViewState extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class AnswerImage extends StatelessWidget {
+  final String imageUtf8;
+  const AnswerImage({
+    required this.imageUtf8,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    log("answer image utf8 is");
+    log(imageUtf8);
+    Uint8List imageUint8 = base64Decode(imageUtf8);
+    print("imageUint8 is");
+    print(imageUint8);
+    return Container(
+      child: FittedBox(
+        fit: BoxFit.contain,
+        // child: Image.asset(picture_name),
+        child: Image.memory(
+          imageUint8,
+          width: 150,
+          height: 150,
+          fit: BoxFit.cover,
+        ),
+      ),
+      width: 150,
+      height: 150,
     );
   }
 }
@@ -189,6 +231,29 @@ class SetImage extends StatelessWidget {
       fit: BoxFit.contain,
       // child: Image.asset(picture_name),
       child: Image.file(picture),
+    );
+  }
+}
+
+class SetTestImage extends StatelessWidget {
+  final String picture;
+  // final File picture;
+  const SetTestImage({
+    // required this.picture_name,
+    required this.picture,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      child: FittedBox(
+        fit: BoxFit.contain,
+        // child: Image.asset(picture_name),
+        child: Image.asset(picture),
+      ),
+      width: 150,
+      height: 150,
     );
   }
 }
