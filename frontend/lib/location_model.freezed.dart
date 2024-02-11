@@ -25,7 +25,7 @@ mixin _$LocationModel {
   @JsonKey(name: 'destination')
   LocationPoint? get destination => throw _privateConstructorUsedError;
   @JsonKey(name: 'midpoints')
-  List<LocationPoint>? get midpoints => throw _privateConstructorUsedError;
+  List<MidPoint>? get midpoints => throw _privateConstructorUsedError;
   @JsonKey(name: 'overview_polyline')
   String? get overviewPolyline => throw _privateConstructorUsedError;
 
@@ -44,7 +44,7 @@ abstract class $LocationModelCopyWith<$Res> {
   $Res call(
       {@JsonKey(name: 'departure') LocationPoint? departure,
       @JsonKey(name: 'destination') LocationPoint? destination,
-      @JsonKey(name: 'midpoints') List<LocationPoint>? midpoints,
+      @JsonKey(name: 'midpoints') List<MidPoint>? midpoints,
       @JsonKey(name: 'overview_polyline') String? overviewPolyline});
 
   $LocationPointCopyWith<$Res>? get departure;
@@ -81,7 +81,7 @@ class _$LocationModelCopyWithImpl<$Res, $Val extends LocationModel>
       midpoints: freezed == midpoints
           ? _value.midpoints
           : midpoints // ignore: cast_nullable_to_non_nullable
-              as List<LocationPoint>?,
+              as List<MidPoint>?,
       overviewPolyline: freezed == overviewPolyline
           ? _value.overviewPolyline
           : overviewPolyline // ignore: cast_nullable_to_non_nullable
@@ -125,7 +125,7 @@ abstract class _$$LocationModelImplCopyWith<$Res>
   $Res call(
       {@JsonKey(name: 'departure') LocationPoint? departure,
       @JsonKey(name: 'destination') LocationPoint? destination,
-      @JsonKey(name: 'midpoints') List<LocationPoint>? midpoints,
+      @JsonKey(name: 'midpoints') List<MidPoint>? midpoints,
       @JsonKey(name: 'overview_polyline') String? overviewPolyline});
 
   @override
@@ -162,7 +162,7 @@ class __$$LocationModelImplCopyWithImpl<$Res>
       midpoints: freezed == midpoints
           ? _value._midpoints
           : midpoints // ignore: cast_nullable_to_non_nullable
-              as List<LocationPoint>?,
+              as List<MidPoint>?,
       overviewPolyline: freezed == overviewPolyline
           ? _value.overviewPolyline
           : overviewPolyline // ignore: cast_nullable_to_non_nullable
@@ -172,12 +172,13 @@ class __$$LocationModelImplCopyWithImpl<$Res>
 }
 
 /// @nodoc
-@JsonSerializable()
+
+@JsonSerializable(explicitToJson: true)
 class _$LocationModelImpl implements _LocationModel {
   _$LocationModelImpl(
       {@JsonKey(name: 'departure') this.departure,
       @JsonKey(name: 'destination') this.destination,
-      @JsonKey(name: 'midpoints') final List<LocationPoint>? midpoints,
+      @JsonKey(name: 'midpoints') final List<MidPoint>? midpoints,
       @JsonKey(name: 'overview_polyline') this.overviewPolyline})
       : _midpoints = midpoints;
 
@@ -190,10 +191,10 @@ class _$LocationModelImpl implements _LocationModel {
   @override
   @JsonKey(name: 'destination')
   final LocationPoint? destination;
-  final List<LocationPoint>? _midpoints;
+  final List<MidPoint>? _midpoints;
   @override
   @JsonKey(name: 'midpoints')
-  List<LocationPoint>? get midpoints {
+  List<MidPoint>? get midpoints {
     final value = _midpoints;
     if (value == null) return null;
     if (_midpoints is EqualUnmodifiableListView) return _midpoints;
@@ -248,7 +249,7 @@ abstract class _LocationModel implements LocationModel {
   factory _LocationModel(
           {@JsonKey(name: 'departure') final LocationPoint? departure,
           @JsonKey(name: 'destination') final LocationPoint? destination,
-          @JsonKey(name: 'midpoints') final List<LocationPoint>? midpoints,
+          @JsonKey(name: 'midpoints') final List<MidPoint>? midpoints,
           @JsonKey(name: 'overview_polyline') final String? overviewPolyline}) =
       _$LocationModelImpl;
 
@@ -263,7 +264,7 @@ abstract class _LocationModel implements LocationModel {
   LocationPoint? get destination;
   @override
   @JsonKey(name: 'midpoints')
-  List<LocationPoint>? get midpoints;
+  List<MidPoint>? get midpoints;
   @override
   @JsonKey(name: 'overview_polyline')
   String? get overviewPolyline;
@@ -439,5 +440,245 @@ abstract class _LocationPoint implements LocationPoint {
   @override
   @JsonKey(ignore: true)
   _$$LocationPointImplCopyWith<_$LocationPointImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+MidPoint _$MidPointFromJson(Map<String, dynamic> json) {
+  return _MidPoint.fromJson(json);
+}
+
+/// @nodoc
+mixin _$MidPoint {
+  @JsonKey(name: 'metadata_latitude')
+  double? get imageLatitude => throw _privateConstructorUsedError;
+  @JsonKey(name: 'metadata_longitude')
+  double? get imageLongitude => throw _privateConstructorUsedError;
+  @JsonKey(name: 'original_latitude')
+  double? get latitude => throw _privateConstructorUsedError;
+  @JsonKey(name: 'original_longitude')
+  double? get longitude => throw _privateConstructorUsedError;
+  @JsonKey(name: 'image_data')
+  String? get imageUtf8 => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $MidPointCopyWith<MidPoint> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $MidPointCopyWith<$Res> {
+  factory $MidPointCopyWith(MidPoint value, $Res Function(MidPoint) then) =
+      _$MidPointCopyWithImpl<$Res, MidPoint>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'metadata_latitude') double? imageLatitude,
+      @JsonKey(name: 'metadata_longitude') double? imageLongitude,
+      @JsonKey(name: 'original_latitude') double? latitude,
+      @JsonKey(name: 'original_longitude') double? longitude,
+      @JsonKey(name: 'image_data') String? imageUtf8});
+}
+
+/// @nodoc
+class _$MidPointCopyWithImpl<$Res, $Val extends MidPoint>
+    implements $MidPointCopyWith<$Res> {
+  _$MidPointCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? imageLatitude = freezed,
+    Object? imageLongitude = freezed,
+    Object? latitude = freezed,
+    Object? longitude = freezed,
+    Object? imageUtf8 = freezed,
+  }) {
+    return _then(_value.copyWith(
+      imageLatitude: freezed == imageLatitude
+          ? _value.imageLatitude
+          : imageLatitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      imageLongitude: freezed == imageLongitude
+          ? _value.imageLongitude
+          : imageLongitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      latitude: freezed == latitude
+          ? _value.latitude
+          : latitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      longitude: freezed == longitude
+          ? _value.longitude
+          : longitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      imageUtf8: freezed == imageUtf8
+          ? _value.imageUtf8
+          : imageUtf8 // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$MidPointImplCopyWith<$Res>
+    implements $MidPointCopyWith<$Res> {
+  factory _$$MidPointImplCopyWith(
+          _$MidPointImpl value, $Res Function(_$MidPointImpl) then) =
+      __$$MidPointImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'metadata_latitude') double? imageLatitude,
+      @JsonKey(name: 'metadata_longitude') double? imageLongitude,
+      @JsonKey(name: 'original_latitude') double? latitude,
+      @JsonKey(name: 'original_longitude') double? longitude,
+      @JsonKey(name: 'image_data') String? imageUtf8});
+}
+
+/// @nodoc
+class __$$MidPointImplCopyWithImpl<$Res>
+    extends _$MidPointCopyWithImpl<$Res, _$MidPointImpl>
+    implements _$$MidPointImplCopyWith<$Res> {
+  __$$MidPointImplCopyWithImpl(
+      _$MidPointImpl _value, $Res Function(_$MidPointImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? imageLatitude = freezed,
+    Object? imageLongitude = freezed,
+    Object? latitude = freezed,
+    Object? longitude = freezed,
+    Object? imageUtf8 = freezed,
+  }) {
+    return _then(_$MidPointImpl(
+      imageLatitude: freezed == imageLatitude
+          ? _value.imageLatitude
+          : imageLatitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      imageLongitude: freezed == imageLongitude
+          ? _value.imageLongitude
+          : imageLongitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      latitude: freezed == latitude
+          ? _value.latitude
+          : latitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      longitude: freezed == longitude
+          ? _value.longitude
+          : longitude // ignore: cast_nullable_to_non_nullable
+              as double?,
+      imageUtf8: freezed == imageUtf8
+          ? _value.imageUtf8
+          : imageUtf8 // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$MidPointImpl implements _MidPoint {
+  _$MidPointImpl(
+      {@JsonKey(name: 'metadata_latitude') this.imageLatitude,
+      @JsonKey(name: 'metadata_longitude') this.imageLongitude,
+      @JsonKey(name: 'original_latitude') this.latitude,
+      @JsonKey(name: 'original_longitude') this.longitude,
+      @JsonKey(name: 'image_data') this.imageUtf8});
+
+  factory _$MidPointImpl.fromJson(Map<String, dynamic> json) =>
+      _$$MidPointImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'metadata_latitude')
+  final double? imageLatitude;
+  @override
+  @JsonKey(name: 'metadata_longitude')
+  final double? imageLongitude;
+  @override
+  @JsonKey(name: 'original_latitude')
+  final double? latitude;
+  @override
+  @JsonKey(name: 'original_longitude')
+  final double? longitude;
+  @override
+  @JsonKey(name: 'image_data')
+  final String? imageUtf8;
+
+  @override
+  String toString() {
+    return 'MidPoint(imageLatitude: $imageLatitude, imageLongitude: $imageLongitude, latitude: $latitude, longitude: $longitude, imageUtf8: $imageUtf8)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$MidPointImpl &&
+            (identical(other.imageLatitude, imageLatitude) ||
+                other.imageLatitude == imageLatitude) &&
+            (identical(other.imageLongitude, imageLongitude) ||
+                other.imageLongitude == imageLongitude) &&
+            (identical(other.latitude, latitude) ||
+                other.latitude == latitude) &&
+            (identical(other.longitude, longitude) ||
+                other.longitude == longitude) &&
+            (identical(other.imageUtf8, imageUtf8) ||
+                other.imageUtf8 == imageUtf8));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, imageLatitude, imageLongitude,
+      latitude, longitude, imageUtf8);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$MidPointImplCopyWith<_$MidPointImpl> get copyWith =>
+      __$$MidPointImplCopyWithImpl<_$MidPointImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$MidPointImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _MidPoint implements MidPoint {
+  factory _MidPoint(
+      {@JsonKey(name: 'metadata_latitude') final double? imageLatitude,
+      @JsonKey(name: 'metadata_longitude') final double? imageLongitude,
+      @JsonKey(name: 'original_latitude') final double? latitude,
+      @JsonKey(name: 'original_longitude') final double? longitude,
+      @JsonKey(name: 'image_data') final String? imageUtf8}) = _$MidPointImpl;
+
+  factory _MidPoint.fromJson(Map<String, dynamic> json) =
+      _$MidPointImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'metadata_latitude')
+  double? get imageLatitude;
+  @override
+  @JsonKey(name: 'metadata_longitude')
+  double? get imageLongitude;
+  @override
+  @JsonKey(name: 'original_latitude')
+  double? get latitude;
+  @override
+  @JsonKey(name: 'original_longitude')
+  double? get longitude;
+  @override
+  @JsonKey(name: 'image_data')
+  String? get imageUtf8;
+  @override
+  @JsonKey(ignore: true)
+  _$$MidPointImplCopyWith<_$MidPointImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

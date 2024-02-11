@@ -40,4 +40,4 @@ import 'package:snampo/location_model.dart';
 // final landmarkInfoProvider = StateProvider<List<String>?>((ref) => (null));
 LocationPoint? target = null;
 String? route = null;
-List<LocationPoint>? landmarkInfoList = null;
+List<MidPoint>? midpointInfoList = null;

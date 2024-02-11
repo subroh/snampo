@@ -64,24 +64,25 @@ class MissionPage extends HookWidget {
   Future<LocationModel> makeMission() async {
     Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high);
-    
+
     final dio = Dio();
     String radiusString =
-        (radius * 10000).toInt().toString(); // km から m にし整数値の文字列に
-    print("made query");
-    // final response = await dio.get(
-    //   'http://localhost:80/route',
-    //   queryParameters: {
-    //     'currentLat': position.latitude,
-    //     'currentLng': position.longitude,
-    //     'radius': radiusString,
-    //   },
-    // );
-    const response = '{"departure":{"latitude":35.658581,"longitude":139.745433},"destination":{"latitude":35.65946095725984,"longitude":139.73649146904035},"midpoints":[{"latitude":35.657320000000006,"longitude":139.74216}],"overview_polyline":"orsxEaa}sYAAP_@f@eAj@f@XXn@b@RFPAd@M|@UJBF|@PtB@Jm@ZPn@FTo@VNl@@DKF\\nALf@@REv@DBANEAC\\EbACJICGVc@rB]zBOnA[|BMv@INGr@?Z@z@HTHHNNp@tAJ`@BV@x@KxAGn@E^QDBXJC?ZE@DRu@TBBC@UHQ@SA}@GcC[y@O"}';
-    String jsonString = response;
+        (radius * 1000).toInt().toString(); // km から m にし整数値の文字列に
+    final response = await dio.get(
+      'http://52.197.206.202/route/',
+      queryParameters: {
+        'currentLat': position.latitude.toString(),
+        'currentLng': position.longitude.toString(),
+        'radius': radiusString,
+      },
+    );
+    print("got response");
+    String jsonString = response.toString();
+    print(jsonString);
     Map<String, dynamic> jsonData = await jsonDecode(jsonString);
     print("loaded json");
     LocationModel missionInfo = LocationModel.fromJson(jsonData);
+    print("separeted");
     return missionInfo;
   }
 
@@ -100,7 +101,7 @@ class MissionPage extends HookWidget {
       final LocationModel missionInfo = snapshot.data!;
       target = missionInfo.destination;
       route = missionInfo.overviewPolyline;
-      landmarkInfoList = missionInfo.midpoints;
+      midpointInfoList = missionInfo.midpoints;
 
       return Scaffold(
         appBar: AppBar(
