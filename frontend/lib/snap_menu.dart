@@ -25,11 +25,11 @@ class SnapView extends StatelessWidget {
       // 最小の表示割合
       minChildSize: 0.15,
       // 最大の表示割合
-      maxChildSize: 0.6,
+      maxChildSize: 1.0,
       // ドラッグを離した時に一番近いsnapSizeになるか
       snap: true,
       // snapで止める時の割合
-      snapSizes: const [0.15, 0.6],
+      snapSizes: const [0.15, 0.6, 1.0],
       builder: (BuildContext context, ScrollController scrollController) {
         return Container(
           color: theme.colorScheme.background,

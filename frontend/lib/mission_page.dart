@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:dio/dio.dart';
+import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:provider/provider.dart';
 import 'package:snampo/snap_menu.dart';
 import 'package:snampo/provider.dart';
@@ -82,9 +83,14 @@ class MissionPage extends HookWidget {
           centerTitle: true,
           backgroundColor: theme.colorScheme.primary,
         ),
-        body: const Center(
+        body: Center(
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              LoadingAnimationWidget.staggeredDotsWave(
+                color: Colors.blue,
+                size: 100,
+              ),
               Text("NOW LOADING"),
             ],
           ),

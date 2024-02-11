@@ -49,10 +49,21 @@ class TopPage extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'スナんぽ',
-              style: style,
+            Container(
+              width: 300,
+              child: Image.asset('images/snampo.png', fit: BoxFit.contain),
             ),
+            // Text(
+            //   'スナんぽ',
+            //   style: style,
+            // ),
+            // Text(
+            //   '写歩',
+            //   style: TextStyle(
+            //     fontSize: 130,
+            //     color: theme.colorScheme.secondary,
+            //   ),
+            // ),
             const SizedBox(
               height: 20,
             ),
