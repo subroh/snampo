@@ -6,13 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:dio/dio.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:provider/provider.dart';
 import 'package:snampo/snap_menu.dart';
 import 'package:snampo/provider.dart';
 import 'package:snampo/location_model.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
-class MissionPage extends HookWidget {
+class MissionPage extends HookConsumerWidget {
   final double radius;
   const MissionPage({required this.radius, super.key});
 
@@ -38,7 +39,7 @@ class MissionPage extends HookWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final textstyle = theme.textTheme.displaySmall!.copyWith(
       color: theme.colorScheme.onPrimary,
@@ -50,9 +51,9 @@ class MissionPage extends HookWidget {
 
     if (snapshot.hasData && snapshot.data != null) {
       final LocationModel missionInfo = snapshot.data!;
-      GlobalVariables.target = missionInfo.destination!;
-      GlobalVariables.route = missionInfo.overviewPolyline!;
-      GlobalVariables.midpointInfoList = missionInfo.midpoints!;
+      ref.read(targetProvider.notifier).state = missionInfo.destination;
+      ref.read(routeProvider.notifier).state = missionInfo.overviewPolyline;
+      ref.read(midpointInfoListProvider.notifier).state = missionInfo.midpoints;
 
       return Scaffold(
         appBar: AppBar(
@@ -94,7 +95,7 @@ class MissionPage extends HookWidget {
   }
 }
 
-class MapView extends StatefulWidget {
+class MapView extends ConsumerStatefulWidget {
   final LocationPoint currentLocation;
   const MapView({required this.currentLocation, super.key});
 
@@ -102,20 +103,20 @@ class MapView extends StatefulWidget {
   _MapViewState createState() => _MapViewState();
 }
 
-class _MapViewState extends State<MapView> {
+class _MapViewState extends ConsumerState<MapView> {
   // マップの表示制御用
   late GoogleMapController mapController;
   List<LatLng> polylineCoordinates = [];
   Set<Polyline> _polylines = {};
-  String encodedPolyline = GlobalVariables.route;
 
   @override
   void initState() {
     super.initState();
-    _decodePolyline();
+    String encodedPolyline = ref.read(routeProvider.notifier).state!;
+    _decodePolyline(encodedPolyline);
   }
 
-  void _decodePolyline() async {
+  void _decodePolyline(String encodedPolyline) async {
     List<PointLatLng> result = PolylinePoints().decodePolyline(encodedPolyline);
     if (result.isNotEmpty) {
       result.forEach((PointLatLng point) {
@@ -141,6 +142,8 @@ class _MapViewState extends State<MapView> {
     var height = MediaQuery.of(context).size.height;
     var width = MediaQuery.of(context).size.width;
 
+    LocationPoint target = ref.read(targetProvider.notifier).state!;
+
     return SizedBox(
       height: height,
       width: width,
@@ -161,8 +164,8 @@ class _MapViewState extends State<MapView> {
                 Marker(
                   markerId: MarkerId("marker_1"),
                   position: LatLng(
-                    GlobalVariables.target!.latitude!,
-                    GlobalVariables.target!.longitude!,
+                    target.latitude!,
+                    target.longitude!,
                   ),
                 )
               },

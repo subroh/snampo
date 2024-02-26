@@ -35,11 +35,14 @@ import 'package:snampo/location_model.dart';
 //   }
 // });
 
-// final targetProvider = StateProvider<Position?>((ref) => (null));
-// final routeProvider = StateProvider<String?>((ref) => (null));
-// final landmarkInfoProvider = StateProvider<List<String>?>((ref) => (null));
-class GlobalVariables {
-  static late LocationPoint target;
-  static late String route;
-  static late List<MidPoint> midpointInfoList;
-}
+final targetProvider = StateProvider<LocationPoint?>((ref) => (null));
+final routeProvider = StateProvider<String?>((ref) => (null));
+final midpointInfoListProvider =
+    StateProvider<List<MidPoint>?>((ref) => (null));
+// class GlobalVariables {
+//   static late LocationPoint target;
+//   static late String route;
+//   static late List<MidPoint> midpointInfoList;
+// }
+
+
