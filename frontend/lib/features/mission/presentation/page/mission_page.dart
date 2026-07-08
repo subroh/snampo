@@ -417,9 +417,6 @@ class SnapViewState extends HookConsumerWidget {
                   !allCompleted || isSubmitting.value
                       ? null
                       : () async {
-                        if (isSubmitting.value) {
-                          return;
-                        }
                         isSubmitting.value = true;
                         try {
                           final progress = await _resolveCurrentProgress(
