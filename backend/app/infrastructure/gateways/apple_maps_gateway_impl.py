@@ -169,7 +169,6 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
         hits_by_id: dict[str, AppleSearchHit] = {}
 
         category_results = self._search_by_categories(
-            center=coordinate,
             region=region,
             categories=categories,
         )
@@ -187,7 +186,6 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
                 if len(hits_by_id) >= resolved_target:
                     break
                 query_results = self._search_by_query(
-                    center=coordinate,
                     region=region,
                     query=query,
                 )
@@ -205,7 +203,6 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
     def _search_by_categories(
         self,
         *,
-        center: Coordinate,
         region: SearchRegion,
         categories: list[str],
     ) -> list[dict[str, Any]]:
@@ -215,8 +212,11 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
         1. まず q を付けずにカテゴリのみで呼ぶ (category-only 仮説)
         2. HTTP 400 なら汎用 q (CATEGORY_SEARCH_GENERIC_Q) を付けて再試行
         空文字 q は送らない (Apple が拒否しうるパラメータを増やさない)。
+
+        地理ヒントは searchRegion のみ送る。
+        Apple は searchRegion と searchLocation の同時指定を 400 で拒否する。
         """
-        params = self._base_search_params(center=center, region=region)
+        params = self._base_search_params(region=region)
         params["includePoiCategories"] = ",".join(categories)
 
         try:
@@ -235,25 +235,18 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
     def _search_by_query(
         self,
         *,
-        center: Coordinate,
         region: SearchRegion,
         query: str,
     ) -> list[dict[str, Any]]:
         """日本語クエリで同一 bbox を再検索する (フォールバック)。"""
-        params = self._base_search_params(center=center, region=region)
+        params = self._base_search_params(region=region)
         params["q"] = query
         return self._get_search_results(params)
 
-    def _base_search_params(
-        self,
-        *,
-        center: Coordinate,
-        region: SearchRegion,
-    ) -> dict[str, str]:
-        lat, lng = center.to_float_tuple()
+    def _base_search_params(self, *, region: SearchRegion) -> dict[str, str]:
+        """共通クエリ。円近傍近似は searchRegion (bbox) のみ (searchLocation は送らない)。"""
         return {
             "searchRegion": format_search_region(region),
-            "searchLocation": f"{lat},{lng}",
             "resultTypeFilter": "Poi",
             "lang": "ja-JP",
             "limitToCountries": "JP",

@@ -255,6 +255,8 @@ class TestAppleMapsGatewaySearch:
 
         first_params = gateway._session.get.call_args_list[0].kwargs["params"]
         assert "includePoiCategories" in first_params
+        assert "searchRegion" in first_params
+        assert "searchLocation" not in first_params
         assert "q" not in first_params
         assert first_params["resultTypeFilter"] == "Poi"
         assert first_params["lang"] == "ja-JP"
@@ -296,6 +298,8 @@ class TestAppleMapsGatewaySearch:
         assert len(hits) == 1
         second_params = gateway._session.get.call_args_list[1].kwargs["params"]
         assert second_params["q"] == CATEGORY_SEARCH_GENERIC_Q
+        assert "searchRegion" in second_params
+        assert "searchLocation" not in second_params
 
     def test_件数不足時にクエリバッグへフォールバックすること(
         self, gateway: AppleMapsGatewayImpl
@@ -338,6 +342,8 @@ class TestAppleMapsGatewaySearch:
 
         query_params = gateway._session.get.call_args_list[2].kwargs["params"]
         assert query_params["q"] == "神社"
+        assert "searchRegion" in query_params
+        assert "searchLocation" not in query_params
 
     def test_同一place_idはdedupされること(self, gateway: AppleMapsGatewayImpl) -> None:
         """カテゴリとクエリで同じ id が出ても 1 件にまとめる。"""
