@@ -234,8 +234,9 @@ class AppleMapsTokenProvider:
 
         access_token = data.get("accessToken")
         if not access_token or not isinstance(access_token, str):
+            keys = sorted(data.keys()) if isinstance(data, dict) else []
             raise ExternalServiceError(
-                "Apple Maps /v1/token response missing accessToken",
+                f"Apple Maps /v1/token response missing accessToken (keys={keys})",
                 service_name=SERVICE_NAME,
             )
 

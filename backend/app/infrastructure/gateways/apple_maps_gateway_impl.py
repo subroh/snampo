@@ -52,6 +52,8 @@ logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "Apple Maps Server API"
 PLACE_ID_PREFIX = "apple:"
+# 例外メッセージ / ログに載せる Apple レスポンス本文の上限
+_MAX_ERROR_BODY_CHARS = 300
 
 # 1 度の緯度あたりのおよそのメートル (bbox 近似用)
 _METERS_PER_DEGREE_LAT = 111_320.0
@@ -75,6 +77,37 @@ REMAINING_QUERY_BAG: tuple[str, ...] = (
 )
 
 SearchRegion = tuple[float, float, float, float]  # north, east, south, west
+
+
+class AppleMapsHTTPError(ExternalServiceError):
+    """Apple Maps API の HTTP エラー (status_code を数値で保持する)
+
+    ステータス判定はメッセージ文字列ではなく status_code を使うこと。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        service_name: str | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        """初期化
+
+        Args:
+            message: エラーメッセージ
+            service_name: サービス名
+            status_code: HTTP ステータスコード
+        """
+        self.status_code = status_code
+        super().__init__(message, service_name=service_name)
+
+
+def _truncate_error_body(text: str, *, limit: int = _MAX_ERROR_BODY_CHARS) -> str:
+    """例外メッセージ用にレスポンス本文を切り詰める。"""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(truncated)"
 
 
 def circle_to_search_region(center: Coordinate, radius_m: float) -> SearchRegion:
@@ -307,9 +340,14 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
             ) from error
         except HTTPError as error:
             status = error.response.status_code if error.response is not None else None
-            body = error.response.text if error.response is not None else ""
+            raw_body = error.response.text if error.response is not None else ""
+            body = _truncate_error_body(raw_body)
             message = f"Failed to search Apple Maps: HTTP {status} {body}".strip()
-            raise ExternalServiceError(message, service_name=SERVICE_NAME) from error
+            raise AppleMapsHTTPError(
+                message,
+                service_name=SERVICE_NAME,
+                status_code=status,
+            ) from error
         except RequestException as error:
             logger.error("Request error while calling Apple Maps /v1/search: %s", error)
             raise ExternalServiceError(

@@ -24,6 +24,7 @@ from app.infrastructure.gateways.apple_maps_gateway_impl import (
     CULTURE_QUERY_BUCKET,
     OUTDOOR_QUERY_BUCKET,
     AppleMapsGatewayImpl,
+    AppleMapsHTTPError,
     build_stratified_query_bag,
     circle_to_search_region,
     distance_band_bounds,
@@ -243,6 +244,25 @@ class TestAppleMapsTokenProvider:
                 private_key_path=None,
             )
 
+    def test_accessToken欠落時はキー名のみ例外に含めること(
+        self, token_provider: AppleMapsTokenProvider
+    ) -> None:
+        """トークン JSON の値はログに載せない (キー一覧のみ)。"""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "expiresInSeconds": 1800,
+            "unexpectedSecret": "should-not-appear-in-message",
+        }
+        token_provider._session.get.return_value = mock_response
+
+        with pytest.raises(ExternalServiceError) as exc_info:
+            token_provider.get_access_token(now=1_000.0)
+        assert "accessToken" in exc_info.value.message
+        assert "keys=" in exc_info.value.message
+        assert "unexpectedSecret" in exc_info.value.message  # キー名は出る
+        assert "should-not-appear-in-message" not in exc_info.value.message
+
 
 class TestAppleMapsGatewaySearch:
     """層別クエリ / 早期停止 / ファンアウト / dedup"""
@@ -395,10 +415,10 @@ class TestAppleMapsGatewaySearch:
         )
         assert hits == []
 
-    def test_HTTPエラーがExternalServiceErrorになること(
+    def test_HTTPエラーがstatus_code付きAppleMapsHTTPErrorになること(
         self, gateway: AppleMapsGatewayImpl
     ) -> None:
-        """検索 API の 500 をドメイン例外へ変換する。"""
+        """検索 API の HTTP エラーは数値 status_code を保持する。"""
         center = Coordinate(latitude=35.0, longitude=139.0)
         bad = MagicMock()
         bad.status_code = 500
@@ -406,6 +426,38 @@ class TestAppleMapsGatewaySearch:
         bad.raise_for_status.side_effect = HTTPError(response=bad)
         gateway._session.get.return_value = bad
 
-        with pytest.raises(ExternalServiceError) as exc_info:
+        with pytest.raises(AppleMapsHTTPError) as exc_info:
             gateway.search_landmarks_nearby(center, 2000, target_count=1, max_calls=1)
         assert exc_info.value.service_name == "Apple Maps Server API"
+        assert exc_info.value.status_code == 500
+
+    def test_HTTP400もstatus_codeで判定できること(self, gateway: AppleMapsGatewayImpl) -> None:
+        """400 もメッセージ文字列ではなく status_code == 400 で分かる。"""
+        center = Coordinate(latitude=35.0, longitude=139.0)
+        bad = MagicMock()
+        bad.status_code = 400
+        # 本文に "HTTP 400" が含まれても、判定は status_code 側を使う前提
+        bad.text = "other status mention: HTTP 400 is not how we classify"
+        bad.raise_for_status.side_effect = HTTPError(response=bad)
+        gateway._session.get.return_value = bad
+
+        with pytest.raises(AppleMapsHTTPError) as exc_info:
+            gateway.search_landmarks_nearby(center, 2000, target_count=1, max_calls=1)
+        assert exc_info.value.status_code == 400
+        assert isinstance(exc_info.value, ExternalServiceError)
+
+    def test_HTTPエラー本文は例外メッセージで切り詰められること(
+        self, gateway: AppleMapsGatewayImpl
+    ) -> None:
+        """巨大なレスポンス本文を無制限に例外へ載せない。"""
+        center = Coordinate(latitude=35.0, longitude=139.0)
+        bad = MagicMock()
+        bad.status_code = 502
+        bad.text = "x" * 2000
+        bad.raise_for_status.side_effect = HTTPError(response=bad)
+        gateway._session.get.return_value = bad
+
+        with pytest.raises(AppleMapsHTTPError) as exc_info:
+            gateway.search_landmarks_nearby(center, 2000, target_count=1, max_calls=1)
+        assert "truncated" in exc_info.value.message
+        assert len(exc_info.value.message) < 500
