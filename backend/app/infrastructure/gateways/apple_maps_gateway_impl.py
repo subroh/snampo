@@ -1,19 +1,24 @@
-"""Apple Maps Server API 検索 Gateway 実装 (スパイク)
+"""Apple Maps Server API 検索 Gateway 実装
 
-GoogleMapsGateway を差し替えず、カテゴリ検索 + 日本語クエリバッグの品質検証専用。
+本番の目的地ランドマーク検索用。Directions / Street View / Roads は Google のまま。
 
-- 円近傍: center+radius → searchRegion bbox に近似し、自前で距離帯フィルタ
-- カテゴリ検索: includePoiCategories (q は省略を試し、400 なら汎用 q にフォールバック)
-- 件数不足時: 公園/神社/カフェ/... のクエリバッグを同一 bbox で再検索
-- place_id は `apple:<id>` で Google place_id と衝突しないようにする
+検索戦略:
+1. 目標距離 * 1.15 の bbox を searchRegion とし、層別シャッフルした日本語クエリで検索
+   (searchLocation と同時指定しない。カテゴリのみ検索は使わない)
+2. 距離帯 (±tolerance%) 内のユニーク件数で早期停止 (予算は LANDMARK_SEARCH_MAX_CALLS)
+3. 不足時は円周上の点で searchLocation のみのファンアウト (残り予算)
+
+place_id は `apple:<id>` で Google と衝突しない。
 
 参考: https://developer.apple.com/documentation/applemapsserverapi/-v1-search
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
+import random
 from typing import Any
 
 import requests
@@ -26,18 +31,21 @@ from app.application.gateway_interfaces.apple_maps_gateway import (
 )
 from app.config import (
     LANDMARK_DISTANCE_TOLERANCE_PERCENT,
+    LANDMARK_SEARCH_MAX_CALLS,
     LANDMARK_SEARCH_TARGET_COUNT,
+    MIN_SEARCH_RADIUS_M,
     REQUEST_TIMEOUT_SECONDS,
 )
 from app.domain.exceptions import ExternalServiceError, ExternalServiceTimeoutError
 from app.domain.services.coordinate_service import calculate_distance
+from app.domain.services.landmark_service import (
+    calculate_search_radius,
+    generate_equidistant_circle_points,
+)
 from app.domain.value_objects import Coordinate
 from app.infrastructure.gateways.apple_maps_auth import (
     APPLE_MAPS_BASE_URL,
     AppleMapsTokenProvider,
-)
-from app.infrastructure.gateways.apple_poi_category_mapping import (
-    map_google_types_to_apple_poi_categories,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,38 +56,33 @@ PLACE_ID_PREFIX = "apple:"
 # 1 度の緯度あたりのおよそのメートル (bbox 近似用)
 _METERS_PER_DEGREE_LAT = 111_320.0
 
-# カテゴリ検索で `q` 省略が 400 になった場合の汎用クエリ。
-# コミュニティ SDK は q を required と記載。omit / empty / 汎用の可否は probe で確認する。
-CATEGORY_SEARCH_GENERIC_Q = "スポット"
+# 高収穫バケット (先頭 3 クエリ用: 各バケットから 1 つ)
+OUTDOOR_QUERY_BUCKET: tuple[str, ...] = ("公園", "展望台")
+CULTURE_QUERY_BUCKET: tuple[str, ...] = ("神社", "寺", "城")
+CASUAL_QUERY_BUCKET: tuple[str, ...] = ("カフェ", "パン", "温泉")
 
-# カテゴリ検索でヒットが少ないときの日本語クエリバッグ
-FALLBACK_QUERY_BAG: tuple[str, ...] = (
-    "公園",
-    "神社",
-    "カフェ",
+# 残りクエリ (バケットの余りと合わせてシャッフル)
+REMAINING_QUERY_BAG: tuple[str, ...] = (
     "博物館",
-    "城",
-    "展望台",
+    "美術館",
+    "銭湯",
+    "道の駅",
+    "灯台",
+    "滝",
+    "湖",
+    "キャンプ",
+    "遊園地",
 )
 
 SearchRegion = tuple[float, float, float, float]  # north, east, south, west
 
 
 def circle_to_search_region(center: Coordinate, radius_m: float) -> SearchRegion:
-    """中心 + 半径 (m) を Apple searchRegion (north,east,south,west) に近似する。
-
-    Args:
-        center: 円の中心
-        radius_m: 半径 (メートル)
-
-    Returns:
-        SearchRegion: (north, east, south, west)
-    """
+    """中心 + 半径 (m) を Apple searchRegion (north,east,south,west) に近似する。"""
     lat = float(center.latitude)
     lng = float(center.longitude)
     delta_lat = radius_m / _METERS_PER_DEGREE_LAT
     cos_lat = math.cos(math.radians(lat))
-    # 極付近で cos≈0 になるのを防ぐ
     meters_per_degree_lng = _METERS_PER_DEGREE_LAT * max(abs(cos_lat), 1e-6)
     delta_lng = radius_m / meters_per_degree_lng
 
@@ -116,32 +119,58 @@ def prefix_apple_place_id(raw_id: str) -> str:
     return f"{PLACE_ID_PREFIX}{raw_id}"
 
 
+def stable_search_seed(center: Coordinate, radius_m: int) -> int:
+    """同一中心・半径で再現可能なシャッフル用シードを作る。"""
+    key = f"{float(center.latitude):.6f}:{float(center.longitude):.6f}:{radius_m}"
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return int(digest[:16], 16)
+
+
+def build_stratified_query_bag(seed: int) -> list[str]:
+    """層別シャッフルしたクエリバッグを返す。
+
+    先頭 3 件: outdoor / culture / casual 各バケットをシャッフルした先頭 1 件。
+    以降: バケット余り + REMAINING をシャッフル。
+    """
+    rng = random.Random(seed)  # noqa: S311 — クエリ順の再現用。暗号用途ではない
+    outdoor = list(OUTDOOR_QUERY_BUCKET)
+    culture = list(CULTURE_QUERY_BUCKET)
+    casual = list(CASUAL_QUERY_BUCKET)
+    rng.shuffle(outdoor)
+    rng.shuffle(culture)
+    rng.shuffle(casual)
+
+    first_three = [outdoor[0], culture[0], casual[0]]
+    leftovers = outdoor[1:] + culture[1:] + casual[1:] + list(REMAINING_QUERY_BAG)
+    rng.shuffle(leftovers)
+    return first_three + leftovers
+
+
 class AppleMapsGatewayImpl(AppleMapsGateway):
-    """Apple Maps Server API 検索の実装 (本番 DI には未接続)"""
+    """Apple Maps Server API 検索の実装 (目的地ランドマーク検索向け)"""
 
     def __init__(
         self,
-        token_provider: AppleMapsTokenProvider,
+        token_provider: AppleMapsTokenProvider | None = None,
         *,
         base_url: str = APPLE_MAPS_BASE_URL,
         session: requests.Session | None = None,
-        fallback_queries: tuple[str, ...] = FALLBACK_QUERY_BAG,
-        category_generic_q: str = CATEGORY_SEARCH_GENERIC_Q,
     ) -> None:
         """初期化
 
         Args:
-            token_provider: access token 供給
+            token_provider: access token 供給 (None なら初回アクセス時に from_config)
             base_url: API ベース URL
             session: requests.Session
-            fallback_queries: 件数不足時のクエリバッグ
-            category_generic_q: カテゴリ検索で q 省略が拒否されたときの汎用 q
         """
         self._token_provider = token_provider
         self._base_url = base_url.rstrip("/")
         self._session = session or requests.Session()
-        self._fallback_queries = fallback_queries
-        self._category_generic_q = category_generic_q
+
+    def _provider(self) -> AppleMapsTokenProvider:
+        if self._token_provider is None:
+            self._token_provider = AppleMapsTokenProvider.from_config()
+        return self._token_provider
 
     def search_landmarks_nearby(
         self,
@@ -150,8 +179,9 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
         *,
         target_count: int | None = None,
         distance_tolerance_percent: float | None = None,
+        max_calls: int | None = None,
     ) -> list[AppleSearchHit]:
-        """カテゴリ検索 → 不足時クエリバッグで距離帯内 POI を返す。"""
+        """層別クエリ検索 → 不足時円周ファンアウトで距離帯内 POI を返す。"""
         if radius_m <= 0:
             raise ValueError("radius_m must be positive")
 
@@ -161,99 +191,104 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
             if distance_tolerance_percent is None
             else distance_tolerance_percent
         )
+        resolved_max_calls = LANDMARK_SEARCH_MAX_CALLS if max_calls is None else max_calls
+        if resolved_max_calls <= 0:
+            return []
+
         min_distance_m, max_distance_m = distance_band_bounds(float(radius_m), resolved_tolerance)
-        # bbox は距離帯の外側まで覆う
         region = circle_to_search_region(coordinate, max_distance_m)
-        categories = map_google_types_to_apple_poi_categories()
+        queries = build_stratified_query_bag(stable_search_seed(coordinate, radius_m))
 
         hits_by_id: dict[str, AppleSearchHit] = {}
+        calls = 0
 
-        category_results = self._search_by_categories(
-            region=region,
-            categories=categories,
-        )
-        self._merge_in_band_hits(
-            hits_by_id=hits_by_id,
-            raw_results=category_results,
-            center=coordinate,
-            min_distance_m=min_distance_m,
-            max_distance_m=max_distance_m,
-            source="category",
-        )
+        # 1. クエリフェーズ (searchRegion のみ)
+        for query in queries:
+            if len(hits_by_id) >= resolved_target or calls >= resolved_max_calls:
+                break
+            raw_results = self._search_by_query_region(region=region, query=query)
+            calls += 1
+            self._merge_in_band_hits(
+                hits_by_id=hits_by_id,
+                raw_results=raw_results,
+                center=coordinate,
+                min_distance_m=min_distance_m,
+                max_distance_m=max_distance_m,
+                source="query",
+            )
 
-        if len(hits_by_id) < resolved_target:
-            for query in self._fallback_queries:
-                if len(hits_by_id) >= resolved_target:
+        # 2. ファンアウト (searchLocation のみ、残り予算)
+        if len(hits_by_id) < resolved_target and calls < resolved_max_calls:
+            tolerance_ratio = resolved_tolerance / 100.0
+            search_radius = calculate_search_radius(radius_m, tolerance_ratio, MIN_SEARCH_RADIUS_M)
+            circle_points = generate_equidistant_circle_points(
+                coordinate,
+                radius_m,
+                float(search_radius),
+                seed=stable_search_seed(coordinate, radius_m) ^ 0xA5A5_5A5A,
+            )
+            for query_index, (point_lat, point_lng) in enumerate(circle_points):
+                if len(hits_by_id) >= resolved_target or calls >= resolved_max_calls:
                     break
-                query_results = self._search_by_query(
-                    region=region,
-                    query=query,
-                )
+                point = Coordinate(latitude=point_lat, longitude=point_lng)
+                query = queries[query_index % len(queries)]
+                raw_results = self._search_by_query_location(location=point, query=query)
+                calls += 1
                 self._merge_in_band_hits(
                     hits_by_id=hits_by_id,
-                    raw_results=query_results,
+                    raw_results=raw_results,
                     center=coordinate,
                     min_distance_m=min_distance_m,
                     max_distance_m=max_distance_m,
-                    source="query",
+                    source="fanout",
                 )
 
+        logger.debug(
+            "Apple landmark search done: hits=%s calls=%s/%s center=(%.4f,%.4f) radius=%s",
+            len(hits_by_id),
+            calls,
+            resolved_max_calls,
+            float(coordinate.latitude),
+            float(coordinate.longitude),
+            radius_m,
+        )
         return list(hits_by_id.values())
 
-    def _search_by_categories(
-        self,
-        *,
-        region: SearchRegion,
-        categories: list[str],
-    ) -> list[dict[str, Any]]:
-        """includePoiCategories でカテゴリ検索する。
-
-        q の扱い (スパイク時点の方針):
-        1. まず q を付けずにカテゴリのみで呼ぶ (category-only 仮説)
-        2. HTTP 400 なら汎用 q (CATEGORY_SEARCH_GENERIC_Q) を付けて再試行
-        空文字 q は送らない (Apple が拒否しうるパラメータを増やさない)。
-
-        地理ヒントは searchRegion のみ送る。
-        Apple は searchRegion と searchLocation の同時指定を 400 で拒否する。
-        """
-        params = self._base_search_params(region=region)
-        params["includePoiCategories"] = ",".join(categories)
-
-        try:
-            return self._get_search_results(params)
-        except ExternalServiceError as error:
-            if not self._is_bad_request(error):
-                raise
-            logger.info(
-                "Category search without q was rejected; retrying with generic q=%s",
-                self._category_generic_q,
-            )
-            params_with_q = dict(params)
-            params_with_q["q"] = self._category_generic_q
-            return self._get_search_results(params_with_q)
-
-    def _search_by_query(
+    def _search_by_query_region(
         self,
         *,
         region: SearchRegion,
         query: str,
     ) -> list[dict[str, Any]]:
-        """日本語クエリで同一 bbox を再検索する (フォールバック)。"""
-        params = self._base_search_params(region=region)
-        params["q"] = query
-        return self._get_search_results(params)
-
-    def _base_search_params(self, *, region: SearchRegion) -> dict[str, str]:
-        """共通クエリ。円近傍近似は searchRegion (bbox) のみ (searchLocation は送らない)。"""
-        return {
+        """searchRegion + 日本語 q (searchLocation は付けない)。"""
+        params = {
+            "q": query,
             "searchRegion": format_search_region(region),
             "resultTypeFilter": "Poi",
             "lang": "ja-JP",
             "limitToCountries": "JP",
         }
+        return self._get_search_results(params)
+
+    def _search_by_query_location(
+        self,
+        *,
+        location: Coordinate,
+        query: str,
+    ) -> list[dict[str, Any]]:
+        """searchLocation + 日本語 q (searchRegion は付けない)。"""
+        lat, lng = location.to_float_tuple()
+        params = {
+            "q": query,
+            "searchLocation": f"{lat},{lng}",
+            "resultTypeFilter": "Poi",
+            "lang": "ja-JP",
+            "limitToCountries": "JP",
+        }
+        return self._get_search_results(params)
 
     def _get_search_results(self, params: dict[str, str]) -> list[dict[str, Any]]:
-        access_token = self._token_provider.get_access_token()
+        access_token = self._provider().get_access_token()
         url = f"{self._base_url}/search"
         try:
             response = self._session.get(
@@ -351,7 +386,3 @@ class AppleMapsGatewayImpl(AppleMapsGateway):
             source=source,
             poi_category=poi_category,
         )
-
-    @staticmethod
-    def _is_bad_request(error: ExternalServiceError) -> bool:
-        return "HTTP 400" in error.message

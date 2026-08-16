@@ -1,7 +1,6 @@
-"""Apple Maps Server API Gateway ポート (検索スパイク用)
+"""Apple Maps Server API Gateway ポート (目的地ランドマーク検索)
 
-本番の GenerateRouteUseCase / GoogleMapsGateway には接続しない。
-カテゴリ検索 + クエリバッグフォールバックの品質検証専用。
+Directions / Street View / Roads は GoogleMapsGateway のまま。
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ from typing import Literal
 
 from app.domain.value_objects import Coordinate, Landmark
 
-AppleSearchSource = Literal["category", "query"]
+AppleSearchSource = Literal["query", "fanout"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,14 +48,16 @@ class AppleMapsGateway(ABC):
         *,
         target_count: int | None = None,
         distance_tolerance_percent: float | None = None,
+        max_calls: int | None = None,
     ) -> list[AppleSearchHit]:
-        """中心 + 半径を bbox 近似し、カテゴリ検索 → 不足時クエリバッグで POI を探す。
+        """層別クエリ + ファンアウトで距離帯内のランドマークを検索する。
 
         Args:
-            coordinate: 検索中心
+            coordinate: 検索中心 (目的地リングの中心 = 現在地)
             radius_m: 目標距離 (メートル)。±tolerance% の距離帯でフィルタする。
-            target_count: フォールバック発動閾値 (未指定時は設定値)
+            target_count: 目標件数 (未指定時は設定値)
             distance_tolerance_percent: 距離帯の許容 % (未指定時は設定値)
+            max_calls: Apple /v1/search の最大呼び出し回数 (未指定時は設定値)
 
         Returns:
             list[AppleSearchHit]: place_id は `apple:<id>` 形式で dedup 済み

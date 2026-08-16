@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Apple Maps Server API のカテゴリ近傍検索をローカルから検証する probe。
+"""Apple Maps Server API の層別クエリ近傍検索をローカルから検証する probe。
 
-#235 の検索スパイク用。Directions / Street View / GenerateRouteUseCase には未接続。
+#235 目的地ランドマーク検索 (本番は LandmarkSearchService → AppleMapsGateway)。
+Directions / Street View / Roads / 中間地点検索は Google のまま。
 
 ## 事前準備 (Maps Server API キー)
 
 1. [Apple Developer](https://developer.apple.com/account) にログイン
-2. Identifiers → Maps IDs で Maps ID を作成 (例: `maps.com.example.snampo`)
-3. Keys → MapKit JS を有効化し、上記 Maps ID を Configure で紐づけて `.p8` を Download
-4. Membership の Team ID と Keys の Key ID を控える
-5. `backend/.env.example` を参考に `backend/.env` へ設定し、`.p8` を git 管理外へ配置
+2. Identifiers → Maps IDs で Maps ID を作成
+3. Keys → MapKit JS を有効化し Maps ID を紐づけて `.p8` を Download
+4. `backend/.env.example` を参考に設定
 
 環境変数:
   APPLE_TEAM_ID
   APPLE_MAPS_KEY_ID
-  APPLE_MAPS_PRIVATE_KEY_PATH
-  APPLE_MAPS_ID  (任意。鍵作成時の Maps ID 追跡用。JWT には含めない)
+  APPLE_MAPS_PRIVATE_KEY       (PEM 文字列。Cloud Run / Secret Manager 向け。優先)
+  APPLE_MAPS_PRIVATE_KEY_PATH  (ローカル .p8。PEM が無いときのフォールバック)
+  APPLE_MAPS_ID                (任意。鍵作成時の Maps ID 追跡用)
 
 ## 使い方
 
@@ -31,8 +32,7 @@ uv run python scripts/probe_apple_maps_search.py --fixture all --json
 ## 成功の目安
 
 箱根 (~35.232, 139.107) や栗橋/久喜 (~36.122, 139.700) で、目標距離 ±15% 帯に
-複数の POI (公園・神社・カフェ等) が返り、後続で Street View 取得候補になりうること。
-source 列が `category` / `query` のどちらで拾えたかも確認する。
+複数の POI が返り、`source` が `query` / `fanout` のどちらで拾えたか確認できること。
 """
 
 from __future__ import annotations
@@ -56,9 +56,11 @@ if "GOOGLE_API_KEY" not in os.environ:
 
 from app.config import (  # noqa: E402
     APPLE_MAPS_KEY_ID,
+    APPLE_MAPS_PRIVATE_KEY,
     APPLE_MAPS_PRIVATE_KEY_PATH,
     APPLE_TEAM_ID,
     LANDMARK_DISTANCE_TOLERANCE_PERCENT,
+    LANDMARK_SEARCH_MAX_CALLS,
     LANDMARK_SEARCH_TARGET_COUNT,
 )
 from app.domain.value_objects import Coordinate  # noqa: E402
@@ -68,9 +70,8 @@ from app.infrastructure.gateways.apple_maps_auth import (  # noqa: E402
 )
 from app.infrastructure.gateways.apple_maps_gateway_impl import (  # noqa: E402
     AppleMapsGatewayImpl,
-)
-from app.infrastructure.gateways.apple_poi_category_mapping import (  # noqa: E402
-    map_google_types_to_apple_poi_categories,
+    build_stratified_query_bag,
+    stable_search_seed,
 )
 
 DEFAULT_FIXTURES: dict[str, tuple[float, float, int, str]] = {
@@ -89,6 +90,7 @@ def _build_gateway() -> AppleMapsGatewayImpl:
     provider = AppleMapsTokenProvider.from_env(
         team_id=APPLE_TEAM_ID or os.environ.get("APPLE_TEAM_ID"),
         key_id=APPLE_MAPS_KEY_ID or os.environ.get("APPLE_MAPS_KEY_ID"),
+        private_key_pem=APPLE_MAPS_PRIVATE_KEY or os.environ.get("APPLE_MAPS_PRIVATE_KEY"),
         private_key_path=APPLE_MAPS_PRIVATE_KEY_PATH
         or os.environ.get("APPLE_MAPS_PRIVATE_KEY_PATH"),
         backend_dir=_BACKEND_DIR,
@@ -122,11 +124,14 @@ def _run_one(
     as_json: bool,
 ) -> dict:
     center = Coordinate(latitude=lat, longitude=lng)
+    seed = stable_search_seed(center, radius_m)
+    queries = build_stratified_query_bag(seed)
     hits = gateway.search_landmarks_nearby(
         center,
         radius_m,
         target_count=LANDMARK_SEARCH_TARGET_COUNT,
         distance_tolerance_percent=LANDMARK_DISTANCE_TOLERANCE_PERCENT,
+        max_calls=LANDMARK_SEARCH_MAX_CALLS,
     )
     payload = {
         "label": label,
@@ -134,7 +139,8 @@ def _run_one(
         "radius_m": radius_m,
         "tolerance_percent": LANDMARK_DISTANCE_TOLERANCE_PERCENT,
         "target_count": LANDMARK_SEARCH_TARGET_COUNT,
-        "apple_poi_categories": map_google_types_to_apple_poi_categories(),
+        "max_calls": LANDMARK_SEARCH_MAX_CALLS,
+        "query_bag_preview": queries[:8],
         "hit_count": len(hits),
         "hits": [
             {
@@ -158,15 +164,17 @@ def _run_one(
         print(
             f"in-band hits={len(hits)} "
             f"(target>={LANDMARK_SEARCH_TARGET_COUNT}, "
-            f"band=±{LANDMARK_DISTANCE_TOLERANCE_PERCENT}%)"
+            f"band=±{LANDMARK_DISTANCE_TOLERANCE_PERCENT}%, "
+            f"max_calls={LANDMARK_SEARCH_MAX_CALLS})"
         )
+        print(f"query bag head: {queries[:5]}")
     return payload
 
 
 def main(argv: list[str] | None = None) -> int:
     """probe を実行する。"""
     parser = argparse.ArgumentParser(
-        description="Probe Apple Maps category+fallback landmark search (#235 spike)"
+        description="Probe Apple Maps stratified query landmark search (#235)"
     )
     parser.add_argument("--lat", type=float, help="中心緯度")
     parser.add_argument("--lng", type=float, help="中心経度")
@@ -204,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
 
     results: list[dict] = []
 
-    if args.fixture == "all":
+    if args.fixture == "all" or (args.fixture is None and args.lat is None):
         for name, (lat, lng, radius_m, description) in DEFAULT_FIXTURES.items():
             results.append(
                 _run_one(
@@ -240,18 +248,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     else:
-        # デフォルト: 3 フィクスチャを順に実行
-        for name, (lat, lng, radius_m, description) in DEFAULT_FIXTURES.items():
-            results.append(
-                _run_one(
-                    gateway,
-                    lat=lat,
-                    lng=lng,
-                    radius_m=args.radius_m if args.radius_m is not None else radius_m,
-                    label=f"{name}: {description}",
-                    as_json=args.json,
-                )
-            )
+        parser.error("--lat/--lng か --fixture を指定してください")
 
     if args.save:
         output_path = _BACKEND_DIR / "apple_maps_search_probe_result.json"

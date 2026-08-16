@@ -1,9 +1,13 @@
 """Apple Maps Server API の JWT / access token 管理
 
 認証フロー:
-1. Team ID + Key ID + .p8 で ES256 JWT (maps_auth_token) を署名
+1. Team ID + Key ID + .p8/PEM で ES256 JWT (maps_auth_token) を署名
 2. GET /v1/token で短い access token に交換
 3. 有効期限までキャッシュして再利用
+
+秘密鍵は Cloud Run では APPLE_MAPS_PRIVATE_KEY (PEM 文字列)、
+ローカルでは APPLE_MAPS_PRIVATE_KEY_PATH (.p8 ファイル) を優先順で読む。
+PEM / token はログに出さない。
 
 参考:
 https://developer.apple.com/documentation/applemapsserverapi/creating-and-using-tokens-with-maps-server-api
@@ -68,21 +72,43 @@ class AppleMapsTokenProvider:
         self._access_token_expires_at: float = 0.0
 
     @classmethod
+    def from_config(cls) -> AppleMapsTokenProvider:
+        """app.config の環境変数から Provider を構築する。"""
+        from app.config import (
+            APPLE_MAPS_KEY_ID,
+            APPLE_MAPS_PRIVATE_KEY,
+            APPLE_MAPS_PRIVATE_KEY_PATH,
+            APPLE_TEAM_ID,
+        )
+
+        return cls.from_env(
+            team_id=APPLE_TEAM_ID,
+            key_id=APPLE_MAPS_KEY_ID,
+            private_key_pem=APPLE_MAPS_PRIVATE_KEY,
+            private_key_path=APPLE_MAPS_PRIVATE_KEY_PATH,
+        )
+
+    @classmethod
     def from_env(
         cls,
         *,
         team_id: str | None,
         key_id: str | None,
-        private_key_path: str | None,
+        private_key_pem: str | None = None,
+        private_key_path: str | None = None,
         backend_dir: Path | None = None,
         base_url: str = APPLE_MAPS_BASE_URL,
         session: requests.Session | None = None,
     ) -> AppleMapsTokenProvider:
         """環境変数相当の値から Provider を構築する。
 
+        秘密鍵は APPLE_MAPS_PRIVATE_KEY (PEM) を優先し、無ければ
+        APPLE_MAPS_PRIVATE_KEY_PATH (.p8) を読む。
+
         Args:
             team_id: APPLE_TEAM_ID
             key_id: APPLE_MAPS_KEY_ID
+            private_key_pem: APPLE_MAPS_PRIVATE_KEY (PEM 文字列)
             private_key_path: APPLE_MAPS_PRIVATE_KEY_PATH (.p8 パス)
             backend_dir: 相対パス解決の基準 (未指定なら CWD)
             base_url: API ベース URL
@@ -92,40 +118,48 @@ class AppleMapsTokenProvider:
             AppleMapsTokenProvider
 
         Raises:
-            AppleMapsCredentialsError: 必須値が欠けている / 鍵ファイルが読めない場合
+            AppleMapsCredentialsError: 必須値が欠けている / 鍵が読めない場合
         """
-        missing = [
+        missing_ids = [
             name
             for name, value in (
                 ("APPLE_TEAM_ID", team_id),
                 ("APPLE_MAPS_KEY_ID", key_id),
-                ("APPLE_MAPS_PRIVATE_KEY_PATH", private_key_path),
             )
             if not (value and value.strip())
         ]
-        if missing:
+        if missing_ids:
             raise AppleMapsCredentialsError(
                 "Apple Maps Server API の認証情報が不足しています: "
-                + ", ".join(missing)
+                + ", ".join(missing_ids)
                 + "。backend/.env.example を参照して設定してください。"
             )
 
-        resolved_team_id = cast(str, team_id).strip()
-        resolved_key_id = cast(str, key_id).strip()
-        resolved_key_path = cast(str, private_key_path).strip()
+        pem = (private_key_pem or "").strip()
+        if not pem:
+            path_value = (private_key_path or "").strip()
+            if not path_value:
+                raise AppleMapsCredentialsError(
+                    "Apple Maps Server API の秘密鍵が不足しています: "
+                    "APPLE_MAPS_PRIVATE_KEY または APPLE_MAPS_PRIVATE_KEY_PATH を設定してください。"
+                )
+            key_path = Path(path_value).expanduser()
+            if not key_path.is_absolute():
+                root = backend_dir if backend_dir is not None else Path.cwd()
+                key_path = root / key_path
+            if not key_path.is_file():
+                raise AppleMapsCredentialsError(f"秘密鍵ファイルが見つかりません: {key_path}")
+            pem = key_path.read_text(encoding="utf-8").strip()
 
-        key_path = Path(resolved_key_path).expanduser()
-        if not key_path.is_absolute():
-            root = backend_dir if backend_dir is not None else Path.cwd()
-            key_path = root / key_path
-        if not key_path.is_file():
-            raise AppleMapsCredentialsError(f"秘密鍵ファイルが見つかりません: {key_path}")
+        if "PRIVATE KEY" not in pem:
+            raise AppleMapsCredentialsError(
+                "APPLE_MAPS_PRIVATE_KEY / 鍵ファイルの内容が PEM 形式ではありません。"
+            )
 
-        private_key_pem = key_path.read_text(encoding="utf-8")
         return cls(
-            team_id=resolved_team_id,
-            key_id=resolved_key_id,
-            private_key_pem=private_key_pem,
+            team_id=cast(str, team_id).strip(),
+            key_id=cast(str, key_id).strip(),
+            private_key_pem=pem,
             base_url=base_url,
             session=session,
         )
@@ -201,7 +235,7 @@ class AppleMapsTokenProvider:
         access_token = data.get("accessToken")
         if not access_token or not isinstance(access_token, str):
             raise ExternalServiceError(
-                f"Apple Maps /v1/token response missing accessToken: {data}",
+                "Apple Maps /v1/token response missing accessToken",
                 service_name=SERVICE_NAME,
             )
 

@@ -1,4 +1,4 @@
-"""Apple Maps Gateway / Auth / マッピングのテスト (HTTP はモック、ネットワーク無し)"""
+"""Apple Maps Gateway / Auth / クエリバッグのテスト (HTTP はモック、ネットワーク無し)"""
 
 from __future__ import annotations
 
@@ -20,12 +20,16 @@ from app.infrastructure.gateways.apple_maps_auth import (
     AppleMapsTokenProvider,
 )
 from app.infrastructure.gateways.apple_maps_gateway_impl import (
-    CATEGORY_SEARCH_GENERIC_Q,
+    CASUAL_QUERY_BUCKET,
+    CULTURE_QUERY_BUCKET,
+    OUTDOOR_QUERY_BUCKET,
     AppleMapsGatewayImpl,
+    build_stratified_query_bag,
     circle_to_search_region,
     distance_band_bounds,
     format_search_region,
     prefix_apple_place_id,
+    stable_search_seed,
 )
 from app.infrastructure.gateways.apple_poi_category_mapping import (
     GOOGLE_TYPE_TO_APPLE_POI_CATEGORY,
@@ -64,7 +68,7 @@ def token_provider(es256_pem: str) -> AppleMapsTokenProvider:
 
 
 class TestApplePoiCategoryMapping:
-    """Google → Apple カテゴリマッピング"""
+    """Google → Apple カテゴリマッピング (参照用、検索本番では未使用)"""
 
     def test_LANDMARKタイプがユニークなAppleカテゴリに畳み込まれること(self) -> None:
         """複数 Google タイプが同一 Apple カテゴリへ重複なく畳み込まれる。"""
@@ -107,6 +111,27 @@ class TestBboxAndDistanceBand:
         """Google place_id と衝突しないよう prefix する。"""
         assert prefix_apple_place_id("I123") == "apple:I123"
         assert prefix_apple_place_id("apple:I123") == "apple:I123"
+
+
+class TestStratifiedQueryBag:
+    """層別クエリバッグ"""
+
+    def test_固定シードで先頭3件が各バケットから1つであること(self) -> None:
+        """outdoor / culture / casual から 1 件ずつが先頭に並ぶ。"""
+        bag = build_stratified_query_bag(42)
+        assert bag[0] in OUTDOOR_QUERY_BUCKET
+        assert bag[1] in CULTURE_QUERY_BUCKET
+        assert bag[2] in CASUAL_QUERY_BUCKET
+
+    def test_同一シードは同一順序であること(self) -> None:
+        """再現可能なシャッフルになる。"""
+        assert build_stratified_query_bag(99) == build_stratified_query_bag(99)
+
+    def test_中心と半径から安定シードが得られること(self) -> None:
+        """同じ中心・半径なら同じシード。"""
+        center = Coordinate(latitude=35.232, longitude=139.107)
+        assert stable_search_seed(center, 2000) == stable_search_seed(center, 2000)
+        assert stable_search_seed(center, 2000) != stable_search_seed(center, 2500)
 
 
 class TestAppleMapsTokenProvider:
@@ -171,19 +196,56 @@ class TestAppleMapsTokenProvider:
         assert token_provider.get_access_token(now=50.0) == "token-b"
         assert token_provider._session.get.call_count == 2
 
+    def test_PEM環境変数からProviderを構築できること(self, es256_pem: str) -> None:
+        """APPLE_MAPS_PRIVATE_KEY (PEM) を優先して読める。"""
+        provider = AppleMapsTokenProvider.from_env(
+            team_id="TEAM12ABCD",
+            key_id="KEY12ABCDE",
+            private_key_pem=es256_pem,
+            private_key_path=None,
+        )
+        token = provider.create_maps_auth_token(now=1_700_000_000)
+        assert isinstance(token, str)
+        assert token.count(".") == 2
+
+    def test_PEMが無くパスがあればファイルから読むこと(
+        self, es256_pem: str, tmp_path: Path
+    ) -> None:
+        """APPLE_MAPS_PRIVATE_KEY_PATH フォールバック。"""
+        key_file = tmp_path / "AuthKey_TEST.p8"
+        key_file.write_text(es256_pem, encoding="utf-8")
+        provider = AppleMapsTokenProvider.from_env(
+            team_id="TEAM12ABCD",
+            key_id="KEY12ABCDE",
+            private_key_pem=None,
+            private_key_path=str(key_file),
+            backend_dir=tmp_path,
+        )
+        assert provider.create_maps_auth_token(now=1_700_000_000)
+
     def test_認証情報不足でCredentialsErrorになること(self, tmp_path: Path) -> None:
         """必須 env が無いとき明確なエラーになる。"""
         with pytest.raises(AppleMapsCredentialsError, match="APPLE_TEAM_ID"):
             AppleMapsTokenProvider.from_env(
                 team_id=None,
                 key_id="KEY",
-                private_key_path=str(tmp_path / "missing.p8"),
+                private_key_pem="-----BEGIN PRIVATE KEY-----\nX\n-----END PRIVATE KEY-----",
                 backend_dir=tmp_path,
+            )
+
+    def test_秘密鍵が無いとCredentialsErrorになること(self) -> None:
+        """PEM もパスも無いときエラーになる。"""
+        with pytest.raises(AppleMapsCredentialsError, match="APPLE_MAPS_PRIVATE_KEY"):
+            AppleMapsTokenProvider.from_env(
+                team_id="TEAM12ABCD",
+                key_id="KEY12ABCDE",
+                private_key_pem=None,
+                private_key_path=None,
             )
 
 
 class TestAppleMapsGatewaySearch:
-    """カテゴリ検索 / フォールバック / dedup"""
+    """層別クエリ / 早期停止 / ファンアウト / dedup"""
 
     @pytest.fixture
     def gateway(self, token_provider: AppleMapsTokenProvider) -> AppleMapsGatewayImpl:
@@ -199,7 +261,6 @@ class TestAppleMapsGatewaySearch:
             token_provider,
             base_url="https://maps-api.apple.test/v1",
             session=MagicMock(),
-            fallback_queries=("公園", "神社"),
         )
 
     def _point_at_distance(
@@ -213,191 +274,124 @@ class TestAppleMapsGatewaySearch:
         lng = float(center.longitude) + (distance_m / meters_per_degree_lng) * math.sin(radians)
         return Coordinate(latitude=lat, longitude=lng)
 
-    def test_カテゴリ検索で距離帯内のPOIが返ること(self, gateway: AppleMapsGatewayImpl) -> None:
-        """カテゴリ検索結果を距離帯で絞り、q 無しで呼ぶ。"""
-        center = Coordinate(latitude=35.232, longitude=139.107)
-        in_band = self._point_at_distance(center, 2000.0)
-        out_of_band = self._point_at_distance(center, 500.0)
-
-        search_response = MagicMock()
-        search_response.raise_for_status = MagicMock()
-        search_response.json.return_value = {
-            "results": [
-                {
-                    "id": "park-1",
-                    "name": "箱根公園",
-                    "poiCategory": "Park",
-                    "coordinate": {
-                        "latitude": in_band.latitude,
-                        "longitude": in_band.longitude,
-                    },
-                },
-                {
-                    "id": "cafe-near",
-                    "name": "近すぎるカフェ",
-                    "poiCategory": "Cafe",
-                    "coordinate": {
-                        "latitude": out_of_band.latitude,
-                        "longitude": out_of_band.longitude,
-                    },
-                },
-            ]
-        }
-        gateway._session.get.return_value = search_response
-
-        hits = gateway.search_landmarks_nearby(
-            center, 2000, target_count=1, distance_tolerance_percent=15.0
-        )
-        assert len(hits) == 1
-        assert hits[0].place_id == "apple:park-1"
-        assert hits[0].source == "category"
-        assert hits[0].display_name == "箱根公園"
-
-        first_params = gateway._session.get.call_args_list[0].kwargs["params"]
-        assert "includePoiCategories" in first_params
-        assert "searchRegion" in first_params
-        assert "searchLocation" not in first_params
-        assert "q" not in first_params
-        assert first_params["resultTypeFilter"] == "Poi"
-        assert first_params["lang"] == "ja-JP"
-        assert first_params["limitToCountries"] == "JP"
-
-    def test_カテゴリ検索が400なら汎用qで再試行すること(
-        self, gateway: AppleMapsGatewayImpl
-    ) -> None:
-        """q 省略が拒否されたら汎用 q でリトライする。"""
-        center = Coordinate(latitude=35.0, longitude=139.0)
-        in_band = self._point_at_distance(center, 2000.0)
-
-        bad_response = MagicMock()
-        bad_response.status_code = 400
-        bad_response.text = "q is required"
-        http_error = HTTPError(response=bad_response)
-        bad_response.raise_for_status.side_effect = http_error
-
-        ok_response = MagicMock()
-        ok_response.raise_for_status = MagicMock()
-        ok_response.json.return_value = {
-            "results": [
-                {
-                    "id": "spot-1",
-                    "name": "スポットA",
-                    "poiCategory": "Park",
-                    "coordinate": {
-                        "latitude": in_band.latitude,
-                        "longitude": in_band.longitude,
-                    },
-                }
-            ]
-        }
-        gateway._session.get.side_effect = [bad_response, ok_response]
-
-        hits = gateway.search_landmarks_nearby(
-            center, 2000, target_count=1, distance_tolerance_percent=15.0
-        )
-        assert len(hits) == 1
-        second_params = gateway._session.get.call_args_list[1].kwargs["params"]
-        assert second_params["q"] == CATEGORY_SEARCH_GENERIC_Q
-        assert "searchRegion" in second_params
-        assert "searchLocation" not in second_params
-
-    def test_件数不足時にクエリバッグへフォールバックすること(
-        self, gateway: AppleMapsGatewayImpl
-    ) -> None:
-        """カテゴリで足りないとき日本語クエリバッグを使う。"""
-        center = Coordinate(latitude=36.122, longitude=139.700)
-        in_band = self._point_at_distance(center, 2500.0)
-
-        empty_category = MagicMock()
-        empty_category.raise_for_status = MagicMock()
-        empty_category.json.return_value = {"results": []}
-
-        empty_query = MagicMock()
-        empty_query.raise_for_status = MagicMock()
-        empty_query.json.return_value = {"results": []}
-
-        query_hit = MagicMock()
-        query_hit.raise_for_status = MagicMock()
-        query_hit.json.return_value = {
-            "results": [
-                {
-                    "id": "shrine-1",
-                    "name": "久喜神社",
-                    "poiCategory": "ReligiousSite",
-                    "coordinate": {
-                        "latitude": in_band.latitude,
-                        "longitude": in_band.longitude,
-                    },
-                }
-            ]
-        }
-        gateway._session.get.side_effect = [empty_category, empty_query, query_hit]
-
-        hits = gateway.search_landmarks_nearby(
-            center, 2500, target_count=1, distance_tolerance_percent=15.0
-        )
-        assert len(hits) == 1
-        assert hits[0].source == "query"
-        assert hits[0].place_id == "apple:shrine-1"
-
-        query_params = gateway._session.get.call_args_list[2].kwargs["params"]
-        assert query_params["q"] == "神社"
-        assert "searchRegion" in query_params
-        assert "searchLocation" not in query_params
-
-    def test_同一place_idはdedupされること(self, gateway: AppleMapsGatewayImpl) -> None:
-        """カテゴリとクエリで同じ id が出ても 1 件にまとめる。"""
-        center = Coordinate(latitude=35.232, longitude=139.107)
-        in_band = self._point_at_distance(center, 2000.0)
-        payload = {
-            "results": [
-                {
-                    "id": "dup-1",
-                    "name": "同じ場所",
-                    "poiCategory": "Park",
-                    "coordinate": {
-                        "latitude": in_band.latitude,
-                        "longitude": in_band.longitude,
-                    },
-                }
-            ]
-        }
-        response = MagicMock()
-        response.raise_for_status = MagicMock()
-        response.json.return_value = payload
-        gateway._session.get.return_value = response
-
-        hits = gateway.search_landmarks_nearby(
-            center, 2000, target_count=5, distance_tolerance_percent=15.0
-        )
-        assert len(hits) == 1
-        assert hits[0].place_id == "apple:dup-1"
-
-    def test_認証なしでもモジュールimportとマッピングは動くこと(self) -> None:
-        """Apple 認証が無くてもマッピング単体は動く。"""
-        categories = map_google_types_to_apple_poi_categories(["park", "cafe"])
-        assert categories == ["Park", "Cafe", "ReligiousSite"]
-
-    def test_id欠落の結果はスキップすること(self, gateway: AppleMapsGatewayImpl) -> None:
-        """id が無い POI は採用しない。"""
-        center = Coordinate(latitude=35.0, longitude=139.0)
-        in_band = self._point_at_distance(center, 2000.0)
+    def _poi_response(self, place_id: str, name: str, coordinate: Coordinate) -> MagicMock:
+        """1 件の検索レスポンスを作る。"""
         response = MagicMock()
         response.raise_for_status = MagicMock()
         response.json.return_value = {
             "results": [
                 {
-                    "name": "IDなし",
+                    "id": place_id,
+                    "name": name,
+                    "poiCategory": "Park",
                     "coordinate": {
-                        "latitude": in_band.latitude,
-                        "longitude": in_band.longitude,
+                        "latitude": coordinate.latitude,
+                        "longitude": coordinate.longitude,
                     },
                 }
             ]
         }
-        gateway._session.get.return_value = response
+        return response
+
+    def test_クエリ検索はsearchRegionのみでsearchLocationを付けないこと(
+        self, gateway: AppleMapsGatewayImpl
+    ) -> None:
+        """本番クエリフェーズのパラメータ制約。"""
+        center = Coordinate(latitude=35.232, longitude=139.107)
+        in_band = self._point_at_distance(center, 2000.0)
+        gateway._session.get.return_value = self._poi_response("park-1", "箱根公園", in_band)
+
         hits = gateway.search_landmarks_nearby(
-            center, 2000, target_count=1, distance_tolerance_percent=15.0
+            center, 2000, target_count=1, distance_tolerance_percent=15.0, max_calls=1
+        )
+        assert len(hits) == 1
+        assert hits[0].source == "query"
+        params = gateway._session.get.call_args.kwargs["params"]
+        assert "q" in params
+        assert "searchRegion" in params
+        assert "searchLocation" not in params
+        assert params["resultTypeFilter"] == "Poi"
+        assert params["lang"] == "ja-JP"
+        assert params["limitToCountries"] == "JP"
+
+    def test_目標件数到達で早期停止すること(self, gateway: AppleMapsGatewayImpl) -> None:
+        """target_count に達したら残クエリを呼ばない。"""
+        center = Coordinate(latitude=35.232, longitude=139.107)
+        in_band = self._point_at_distance(center, 2000.0)
+        gateway._session.get.return_value = self._poi_response("park-1", "箱根公園", in_band)
+
+        hits = gateway.search_landmarks_nearby(
+            center, 2000, target_count=1, distance_tolerance_percent=15.0, max_calls=8
+        )
+        assert len(hits) == 1
+        assert gateway._session.get.call_count == 1
+
+    def test_件数不足時にファンアウトでsearchLocationのみ使うこと(
+        self, gateway: AppleMapsGatewayImpl
+    ) -> None:
+        """クエリで 0 件のあと、円周ファンアウトが searchLocation のみ送る。"""
+        center = Coordinate(latitude=36.122, longitude=139.700)
+        in_band = self._point_at_distance(center, 2500.0)
+
+        empty = MagicMock()
+        empty.raise_for_status = MagicMock()
+        empty.json.return_value = {"results": []}
+
+        fanout_hit = self._poi_response("shrine-1", "久喜神社", in_band)
+
+        def side_effect(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs.get("params", {})
+            assert isinstance(params, dict)
+            if "searchLocation" in params:
+                assert "searchRegion" not in params
+                return fanout_hit
+            assert "searchRegion" in params
+            assert "searchLocation" not in params
+            return empty
+
+        gateway._session.get.side_effect = side_effect
+
+        hits = gateway.search_landmarks_nearby(
+            center, 2500, target_count=1, distance_tolerance_percent=15.0, max_calls=20
+        )
+        assert len(hits) == 1
+        assert hits[0].source == "fanout"
+        assert hits[0].place_id == "apple:shrine-1"
+
+    def test_max_callsを超えてクエリを投げないこと(self, gateway: AppleMapsGatewayImpl) -> None:
+        """HTTP 予算を守り、全クエリバッグを回し切らない。"""
+        center = Coordinate(latitude=35.0, longitude=139.0)
+        empty = MagicMock()
+        empty.raise_for_status = MagicMock()
+        empty.json.return_value = {"results": []}
+        gateway._session.get.return_value = empty
+
+        hits = gateway.search_landmarks_nearby(
+            center, 2000, target_count=5, distance_tolerance_percent=15.0, max_calls=3
+        )
+        assert hits == []
+        assert gateway._session.get.call_count == 3
+
+    def test_同一place_idはdedupされること(self, gateway: AppleMapsGatewayImpl) -> None:
+        """同じ id は 1 件にまとめる。"""
+        center = Coordinate(latitude=35.232, longitude=139.107)
+        in_band = self._point_at_distance(center, 2000.0)
+        gateway._session.get.return_value = self._poi_response("dup-1", "同じ場所", in_band)
+
+        hits = gateway.search_landmarks_nearby(
+            center, 2000, target_count=5, distance_tolerance_percent=15.0, max_calls=2
+        )
+        assert len(hits) == 1
+        assert hits[0].place_id == "apple:dup-1"
+
+    def test_距離帯外は除外すること(self, gateway: AppleMapsGatewayImpl) -> None:
+        """近すぎる POI は距離帯フィルタで落とす。"""
+        center = Coordinate(latitude=35.232, longitude=139.107)
+        near = self._point_at_distance(center, 500.0)
+        gateway._session.get.return_value = self._poi_response("near-1", "近すぎ", near)
+
+        hits = gateway.search_landmarks_nearby(
+            center, 2000, target_count=5, distance_tolerance_percent=15.0, max_calls=1
         )
         assert hits == []
 
@@ -413,5 +407,5 @@ class TestAppleMapsGatewaySearch:
         gateway._session.get.return_value = bad
 
         with pytest.raises(ExternalServiceError) as exc_info:
-            gateway.search_landmarks_nearby(center, 2000, target_count=1)
+            gateway.search_landmarks_nearby(center, 2000, target_count=1, max_calls=1)
         assert exc_info.value.service_name == "Apple Maps Server API"
